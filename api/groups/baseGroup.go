@@ -1,6 +1,7 @@
 package groups
 
 import (
+	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -20,7 +21,9 @@ type baseGroup struct {
 func newBaseGroup() *baseGroup {
 	return &baseGroup{
 		additionalMiddlewares: make([]gin.HandlerFunc, 0),
-		authMiddleware:        func(ctx *gin.Context) {},
+		authMiddleware: func(ctx *gin.Context) {
+			ctx.AbortWithStatus(http.StatusUnauthorized)
+		},
 	}
 }
 

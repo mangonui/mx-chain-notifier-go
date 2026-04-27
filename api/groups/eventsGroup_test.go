@@ -57,6 +57,31 @@ func TestNewEventsGroup(t *testing.T) {
 		require.Equal(t, 0, len(eg.GetAdditionalMiddlewares()))
 	})
 
+	t.Run("with empty credentials and auth-enabled route, should reject", func(t *testing.T) {
+		t.Parallel()
+
+		eg, err := groups.NewEventsGroup(createMockEventsGroupArgs())
+		require.NoError(t, err)
+
+		ws := startWebServer(eg, eventsPath, config.APIRoutesConfig{
+			APIPackages: map[string]config.APIPackageConfig{
+				"events": {
+					Routes: []config.RouteConfig{
+						{Name: "/push", Open: true, Auth: true},
+					},
+				},
+			},
+		})
+
+		req, _ := http.NewRequest("POST", "/events/push", bytes.NewBuffer([]byte("{}")))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		ws.ServeHTTP(resp, req)
+
+		require.Equal(t, http.StatusUnauthorized, resp.Code)
+	})
+
 	t.Run("with basic auth middleware, should work", func(t *testing.T) {
 		t.Parallel()
 

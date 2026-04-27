@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -117,8 +118,9 @@ func (w *webServer) Run() error {
 	addr := w.getWSAddr()
 
 	server := &http.Server{
-		Addr:    addr,
-		Handler: engine,
+		Addr:              addr,
+		Handler:           engine,
+		ReadHeaderTimeout: 5 * time.Second,
 	}
 
 	w.httpServer, err = NewHTTPServerWrapper(server)

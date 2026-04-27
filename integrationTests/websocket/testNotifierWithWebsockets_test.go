@@ -124,6 +124,199 @@ func TestNotifierWithWebsockets_PushEvents(t *testing.T) {
 	integrationTests.WaitTimeout(t, wg, time.Second*2)
 }
 
+func TestNotifierWithWebsockets_PushEvents_DRWAIdentifier(t *testing.T) {
+	cfg := integrationTests.GetDefaultConfigs()
+	notifier, err := integrationTests.NewTestNotifierWithWS(cfg.MainConfig)
+	require.Nil(t, err)
+
+	webServer, err := integrationTests.CreateObserverConnector(notifier.Facade, common.HTTPConnectorType, common.WSPublisherType, common.PayloadV1)
+	require.Nil(t, err)
+
+	_ = notifier.Publisher.Run()
+	defer notifier.Publisher.Close()
+
+	ws, err := integrationTests.NewWSClient(notifier.WSHandler)
+	require.Nil(t, err)
+	defer ws.Close()
+
+	subscribeEvent := &data.SubscribeEvent{
+		SubscriptionEntries: []data.SubscriptionEntry{
+			{
+				EventType: common.PushLogsAndEvents,
+			},
+		},
+	}
+
+	ws.SendSubscribeMessage(subscribeEvent)
+
+	addr := []byte("addr-drwa")
+	identifier := common.DrwaTransferDeniedEvent
+	require.True(t, common.IsDRWAIdentifier(identifier))
+
+	events := []data.Event{
+		{
+			Address:    hex.EncodeToString(addr),
+			Identifier: identifier,
+			TxHash:     "drwa-tx-1",
+			Data:       []byte("DRWA_KYC_REQUIRED"),
+			Topics:     [][]byte{[]byte("sender"), []byte("receiver")},
+		},
+	}
+
+	header := &block.HeaderV2{
+		Header: &block.Header{
+			ShardID:   1,
+			TimeStamp: 1234,
+		},
+	}
+	headerBytes, _ := json.Marshal(header)
+
+	stateAccesses := make(map[string]*stateChange.StateAccesses)
+	stateAccesses["drwa-tx-1"] = &stateChange.StateAccesses{}
+
+	saveBlockData := &outport.OutportBlock{
+		TransactionPool: &outport.TransactionPool{
+			Logs: []*outport.LogData{
+				{
+					Log: &transaction.Log{
+						Events: []*transaction.Event{
+							{
+								Address:    addr,
+								Identifier: []byte(identifier),
+								Topics:     [][]byte{[]byte("sender"), []byte("receiver")},
+								Data:       []byte("DRWA_KYC_REQUIRED"),
+							},
+						},
+					},
+					TxHash: "drwa-tx-1",
+				},
+			},
+		},
+		BlockData: &outport.BlockData{
+			HeaderBytes: headerBytes,
+			HeaderType:  string(core.ShardHeaderV2),
+			HeaderHash:  []byte("headerHash"),
+			Body: &block.Body{
+				MiniBlocks: make([]*block.MiniBlock, 1),
+			},
+		},
+		HeaderGasConsumption: &outport.HeaderGasConsumption{},
+		StateAccesses:        stateAccesses,
+	}
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		reply, err := ws.ReceiveEvents()
+		require.Nil(t, err)
+
+		require.Equal(t, events, reply)
+		wg.Done()
+	}()
+
+	time.Sleep(time.Second)
+
+	err = webServer.PushEventsRequest(saveBlockData)
+	require.Nil(t, err)
+
+	integrationTests.WaitTimeout(t, wg, time.Second*2)
+}
+
+func TestNotifierWithWebsockets_PushEvents_AllDRWAIdentifiers(t *testing.T) {
+	cfg := integrationTests.GetDefaultConfigs()
+	notifier, err := integrationTests.NewTestNotifierWithWS(cfg.MainConfig)
+	require.Nil(t, err)
+
+	webServer, err := integrationTests.CreateObserverConnector(notifier.Facade, common.HTTPConnectorType, common.WSPublisherType, common.PayloadV1)
+	require.Nil(t, err)
+
+	_ = notifier.Publisher.Run()
+	defer notifier.Publisher.Close()
+
+	ws, err := integrationTests.NewWSClient(notifier.WSHandler)
+	require.Nil(t, err)
+	defer ws.Close()
+
+	ws.SendSubscribeMessage(&data.SubscribeEvent{
+		SubscriptionEntries: []data.SubscriptionEntry{{
+			EventType: common.PushLogsAndEvents,
+		}},
+	})
+
+	addr := []byte("addr-drwa-all")
+	expectedEvents := make([]data.Event, 0, len(common.DRWAEventIdentifiers))
+	logEvents := make([]*transaction.Event, 0, len(common.DRWAEventIdentifiers))
+
+	for _, identifier := range common.DRWAEventIdentifiers {
+		expectedEvents = append(expectedEvents, data.Event{
+			Address:    hex.EncodeToString(addr),
+			Identifier: identifier,
+			TxHash:     "drwa-tx-a",
+			Data:       []byte(identifier + "-data"),
+			Topics:     [][]byte{[]byte("topic-" + identifier)},
+		})
+		logEvents = append(logEvents, &transaction.Event{
+			Address:    addr,
+			Identifier: []byte(identifier),
+			Topics:     [][]byte{[]byte("topic-" + identifier)},
+			Data:       []byte(identifier + "-data"),
+		})
+	}
+
+	header := &block.HeaderV2{
+		Header: &block.Header{
+			ShardID:   1,
+			TimeStamp: 1234,
+		},
+	}
+	headerBytes, _ := json.Marshal(header)
+
+	stateAccesses := make(map[string]*stateChange.StateAccesses, len(common.DRWAEventIdentifiers))
+	for idx := range common.DRWAEventIdentifiers {
+		txHash := "drwa-tx-" + string(rune('a'+idx))
+		stateAccesses[txHash] = &stateChange.StateAccesses{}
+	}
+
+	saveBlockData := &outport.OutportBlock{
+		TransactionPool: &outport.TransactionPool{
+			Logs: []*outport.LogData{{
+				Log: &transaction.Log{
+					Events: logEvents,
+				},
+				TxHash: "drwa-tx-a",
+			}},
+		},
+		BlockData: &outport.BlockData{
+			HeaderBytes: headerBytes,
+			HeaderType:  string(core.ShardHeaderV2),
+			HeaderHash:  []byte("headerHash"),
+			Body: &block.Body{
+				MiniBlocks: make([]*block.MiniBlock, 1),
+			},
+		},
+		HeaderGasConsumption: &outport.HeaderGasConsumption{},
+		StateAccesses:        stateAccesses,
+	}
+
+	wg := &sync.WaitGroup{}
+	wg.Add(1)
+
+	go func() {
+		reply, recvErr := ws.ReceiveEvents()
+		require.Nil(t, recvErr)
+		assert.Equal(t, expectedEvents, reply)
+		wg.Done()
+	}()
+
+	time.Sleep(time.Second)
+
+	err = webServer.PushEventsRequest(saveBlockData)
+	require.Nil(t, err)
+
+	integrationTests.WaitTimeout(t, wg, time.Second*2)
+}
+
 func TestNotifierWithWebsockets_BlockEvents(t *testing.T) {
 	cfg := integrationTests.GetDefaultConfigs()
 	notifier, err := integrationTests.NewTestNotifierWithWS(cfg.MainConfig)
