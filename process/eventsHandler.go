@@ -18,12 +18,15 @@ const (
 	setRetryDuration       = time.Millisecond * 500
 	reconnectRetryDuration = time.Second * 2
 	minRetries             = 1
+	maxCheckProcessedRetries = 3
 	revertKeyPrefix        = "revert_"
 	finalizedKeyPrefix     = "finalized_"
 
 	rabbitmqMetricPrefix = "RabbitMQ"
 	redisMetricPrefix    = "Redis"
 )
+
+var retrySleep = time.Sleep
 
 // ArgsEventsHandler defines the arguments needed for an events handler
 type ArgsEventsHandler struct {
@@ -393,34 +396,31 @@ func (eh *eventsHandler) handleStateAccesses(stateAccesses data.BlockStateAccess
 }
 
 func (eh *eventsHandler) tryCheckProcessedWithRetry(id, blockHash string) bool {
-	var err error
-	var setSuccessful bool
-
 	prefix := getPrefixLockerKey(id)
 	key := prefix + blockHash
 
-	for {
+	for retries := 0; retries < maxCheckProcessedRetries; retries++ {
 		t := time.Now()
-		setSuccessful, err = eh.locker.IsEventProcessed(context.Background(), key)
+		setSuccessful, err := eh.locker.IsEventProcessed(context.Background(), key)
 		eh.metricsHandler.AddRequest(getRedisOpID(id), time.Since(t))
 
 		if err == nil {
-			break
+			log.Debug("locker", "event", id, "block hash", blockHash, "succeeded", setSuccessful)
+			return setSuccessful
 		}
 
 		log.Error("failed to check event in locker", "error", err.Error())
 		if !eh.locker.HasConnection(context.Background()) {
 			log.Error("failure connecting to locker service")
 
-			time.Sleep(reconnectRetryDuration)
+			retrySleep(reconnectRetryDuration)
 		} else {
-			time.Sleep(setRetryDuration)
+			retrySleep(setRetryDuration)
 		}
 	}
 
-	log.Debug("locker", "event", id, "block hash", blockHash, "succeeded", setSuccessful)
-
-	return setSuccessful
+	log.Error("locker retry budget exhausted", "event", id, "block hash", blockHash, "retries", maxCheckProcessedRetries)
+	return false
 }
 
 func getPrefixLockerKey(id string) string {

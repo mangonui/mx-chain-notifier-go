@@ -31,3 +31,11 @@ func (wd *websocketDispatcher) ReadSendChannel() []byte {
 	d := <-wd.send
 	return d
 }
+
+func (wd *websocketDispatcher) SendQueueLen() int {
+	return len(wd.send)
+}
+
+func (wd *websocketDispatcher) SendQueueCap() int {
+	return cap(wd.send)
+}

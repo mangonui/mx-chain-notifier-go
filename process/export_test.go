@@ -1,5 +1,7 @@
 package process
 
+import "time"
+
 import (
 	"encoding/hex"
 
@@ -12,6 +14,14 @@ import (
 // TryCheckProcessedWithRetry exports internal method for testing
 func (eh *eventsHandler) TryCheckProcessedWithRetry(prefix, blockHash string) bool {
 	return eh.tryCheckProcessedWithRetry(prefix, blockHash)
+}
+
+func SetRetrySleepForTests(sleeper func(duration time.Duration)) func() {
+	previous := retrySleep
+	retrySleep = sleeper
+	return func() {
+		retrySleep = previous
+	}
 }
 
 // HandlePushEvents -

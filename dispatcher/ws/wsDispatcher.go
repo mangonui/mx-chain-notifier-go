@@ -46,6 +46,14 @@ type websocketDispatcher struct {
 	marshaller marshal.Marshalizer
 }
 
+func (wd *websocketDispatcher) enqueueMessage(wsEventBytes []byte, eventType string) {
+	select {
+	case wd.send <- wsEventBytes:
+	default:
+		log.Warn("dropping websocket event for slow consumer", "dispatcher", wd.id.String(), "event", eventType)
+	}
+}
+
 // newWebSocketDispatcher createa a new ws dispatcher instance
 func newWebSocketDispatcher(args argsWebSocketDispatcher) (*websocketDispatcher, error) {
 	if check.IfNil(args.Dispatcher) {
@@ -90,7 +98,7 @@ func (wd *websocketDispatcher) PushEvents(events []data.Event) {
 		return
 	}
 
-	wd.send <- wsEventBytes
+	wd.enqueueMessage(wsEventBytes, common.PushLogsAndEvents)
 }
 
 // RevertEvent receives a reverted block event and process it before pushing to socket
@@ -110,7 +118,7 @@ func (wd *websocketDispatcher) RevertEvent(event data.RevertBlock) {
 		return
 	}
 
-	wd.send <- wsEventBytes
+	wd.enqueueMessage(wsEventBytes, common.RevertBlockEvents)
 }
 
 // FinalizedEvent receives a finalized block event and process it before pushing to socket
@@ -130,7 +138,7 @@ func (wd *websocketDispatcher) FinalizedEvent(event data.FinalizedBlock) {
 		return
 	}
 
-	wd.send <- wsEventBytes
+	wd.enqueueMessage(wsEventBytes, common.FinalizedBlockEvents)
 }
 
 // TxsEvent receives a block txs event and process it before pushing to socket
@@ -150,7 +158,7 @@ func (wd *websocketDispatcher) TxsEvent(event data.BlockTxs) {
 		return
 	}
 
-	wd.send <- wsEventBytes
+	wd.enqueueMessage(wsEventBytes, common.BlockTxs)
 }
 
 // BlockEvents receives block events with data and processes it before pushing to socket
@@ -170,7 +178,7 @@ func (wd *websocketDispatcher) BlockEvents(event data.BlockEventsWithOrder) {
 		return
 	}
 
-	wd.send <- wsEventBytes
+	wd.enqueueMessage(wsEventBytes, common.BlockEvents)
 }
 
 // ScrsEvent receives a block scrs event and process it before pushing to socket
@@ -190,7 +198,7 @@ func (wd *websocketDispatcher) ScrsEvent(event data.BlockScrs) {
 		return
 	}
 
-	wd.send <- wsEventBytes
+	wd.enqueueMessage(wsEventBytes, common.BlockScrs)
 }
 
 // StateAccessesEvent receives a block state accesses event and process it before pushing to socket
@@ -210,7 +218,7 @@ func (wd *websocketDispatcher) StateAccessesEvent(event data.BlockStateAccesses)
 		return
 	}
 
-	wd.send <- wsEventBytes
+	wd.enqueueMessage(wsEventBytes, common.BlockStateAccesses)
 }
 
 // writePump listens on the send-channel and pushes data on the socket stream
