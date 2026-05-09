@@ -211,17 +211,17 @@ func TestAPIConfig(t *testing.T) {
 					{
 						Name: "/push",
 						Open: true,
-						Auth: false,
+						Auth: true,
 					},
 					{
 						Name: "/revert",
 						Open: true,
-						Auth: false,
+						Auth: true,
 					},
 					{
 						Name: "/finalized",
 						Open: true,
-						Auth: false,
+						Auth: true,
 					},
 				},
 			},
@@ -254,9 +254,9 @@ func TestAPIConfig(t *testing.T) {
 
 [APIPackages.events]
     Routes = [
-        { Name = "/push", Open = true, Auth = false },
-        { Name = "/revert", Open = true, Auth = false },
-        { Name = "/finalized", Open = true, Auth = false },
+        { Name = "/push", Open = true, Auth = true },
+        { Name = "/revert", Open = true, Auth = true },
+        { Name = "/finalized", Open = true, Auth = true },
     ]
 
 [APIPackages.hub]

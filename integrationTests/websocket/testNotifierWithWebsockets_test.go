@@ -242,7 +242,7 @@ func TestNotifierWithWebsockets_PushEvents_DRWAIdentifier(t *testing.T) {
 
 	saveBlockData := &outport.OutportBlock{
 		TransactionPool: &outport.TransactionPool{
-			Logs: []*outport.LogData{
+			Logs: []*transaction.LogData{
 				{
 					Log: &transaction.Log{
 						Events: []*transaction.Event{
@@ -346,7 +346,7 @@ func TestNotifierWithWebsockets_PushEvents_AllDRWAIdentifiers(t *testing.T) {
 
 	saveBlockData := &outport.OutportBlock{
 		TransactionPool: &outport.TransactionPool{
-			Logs: []*outport.LogData{{
+			Logs: []*transaction.LogData{{
 				Log: &transaction.Log{
 					Events: logEvents,
 				},

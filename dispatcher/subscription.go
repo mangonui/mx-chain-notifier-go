@@ -31,6 +31,10 @@ const (
 
 const (
 	erdTag = "erd"
+
+	maxSubscriptionEntriesPerMessage = 256
+	maxSubscriptionsPerDispatcher    = 1024
+	maxSubscriptionsPerAddress       = 128
 )
 
 // SubscriptionMapper defines a subscriptions manager component
@@ -51,6 +55,10 @@ func NewSubscriptionMapper() *SubscriptionMapper {
 // It assigns each SubscribeEvent a match level from the input provided
 func (sm *SubscriptionMapper) MatchSubscribeEvent(event data.SubscribeEvent) {
 	if event.SubscriptionEntries == nil || len(event.SubscriptionEntries) == 0 {
+		if !sm.canAppendSubscription(event.DispatcherID, "") {
+			log.Warn("subscription limit reached", "dispatcherID", event.DispatcherID)
+			return
+		}
 		sm.appendSubscription(data.Subscription{
 			DispatcherID: event.DispatcherID,
 			MatchLevel:   MatchAll,
@@ -62,8 +70,16 @@ func (sm *SubscriptionMapper) MatchSubscribeEvent(event data.SubscribeEvent) {
 		)
 		return
 	}
+	if len(event.SubscriptionEntries) > maxSubscriptionEntriesPerMessage {
+		log.Warn("subscription message rejected; too many entries", "dispatcherID", event.DispatcherID, "entries", len(event.SubscriptionEntries))
+		return
+	}
 
 	for _, subEntry := range event.SubscriptionEntries {
+		if !sm.canAppendSubscription(event.DispatcherID, subEntry.Address) {
+			log.Warn("subscription rejected; limit reached", "dispatcherID", event.DispatcherID, "address", subEntry.Address)
+			continue
+		}
 		matchLevel := sm.matchLevelFromInput(subEntry)
 		eventType := getEventType(subEntry)
 		subscription := data.Subscription{
@@ -138,6 +154,29 @@ func (sm *SubscriptionMapper) appendSubscription(sub data.Subscription) {
 	defer sm.rwMut.Unlock()
 
 	sm.subscriptions[sub.DispatcherID] = append(sm.subscriptions[sub.DispatcherID], sub)
+}
+
+func (sm *SubscriptionMapper) canAppendSubscription(dispatcherID uuid.UUID, address string) bool {
+	sm.rwMut.RLock()
+	defer sm.rwMut.RUnlock()
+
+	dispatcherSubscriptions := sm.subscriptions[dispatcherID]
+	if len(dispatcherSubscriptions) >= maxSubscriptionsPerDispatcher {
+		return false
+	}
+
+	if address == "" {
+		return true
+	}
+
+	numForAddress := 0
+	for _, sub := range dispatcherSubscriptions {
+		if sub.Address == address {
+			numForAddress++
+		}
+	}
+
+	return numForAddress < maxSubscriptionsPerAddress
 }
 
 func getEventType(subEntry data.SubscriptionEntry) string {

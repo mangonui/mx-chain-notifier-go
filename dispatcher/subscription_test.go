@@ -88,6 +88,23 @@ func TestSubscriptionMapper_MatchSubscribeEventResultsInCorrectSet(t *testing.T)
 	}
 }
 
+func TestSubscriptionMapper_RejectsOversizedSubscriptionList(t *testing.T) {
+	t.Parallel()
+
+	subMap := NewSubscriptionMapper()
+	entries := make([]data.SubscriptionEntry, maxSubscriptionEntriesPerMessage+1)
+	for idx := range entries {
+		entries[idx] = data.SubscriptionEntry{Address: fmt.Sprintf("erd1%d", idx)}
+	}
+
+	subMap.MatchSubscribeEvent(data.SubscribeEvent{
+		DispatcherID:        uuid.New(),
+		SubscriptionEntries: entries,
+	})
+
+	require.Empty(t, subMap.Subscriptions())
+}
+
 func TestSubscriptionMap_MatchSubscribeEventCorrectMatchLevel(t *testing.T) {
 	t.Parallel()
 

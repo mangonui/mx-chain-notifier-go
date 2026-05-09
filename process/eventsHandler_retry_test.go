@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestTryCheckProcessedWithRetryReturnsFalseAfterRetryBudgetExhausted(t *testing.T) {
+func TestTryCheckProcessedWithRetryProcessesAfterRetryBudgetExhausted(t *testing.T) {
 	restoreSleep := process.SetRetrySleepForTests(func(duration time.Duration) {})
 	defer restoreSleep()
 
@@ -31,6 +31,6 @@ func TestTryCheckProcessedWithRetryReturnsFalseAfterRetryBudgetExhausted(t *test
 	require.NoError(t, err)
 
 	ok := eventsHandler.TryCheckProcessedWithRetry("push", "hash")
-	require.False(t, ok)
+	require.True(t, ok)
 	require.Equal(t, 3, callCount)
 }

@@ -243,3 +243,27 @@ func TestClose(t *testing.T) {
 		require.Equal(t, uint32(0), atomic.LoadUint32(&numCalls))
 	})
 }
+
+func TestPublisher_BroadcastDoesNotBlockIndefinitelyWhenQueueIsFull(t *testing.T) {
+	t.Parallel()
+
+	p, err := process.NewPublisher(&mocks.PublisherHandlerStub{})
+	require.NoError(t, err)
+	defer func() {
+		_ = p.Close()
+	}()
+
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 1100; i++ {
+			p.Broadcast(data.BlockEvents{})
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		require.Fail(t, "broadcast blocked on full publisher queue")
+	}
+}
