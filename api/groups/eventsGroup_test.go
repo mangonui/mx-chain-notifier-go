@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/multiversx/mx-chain-communication-go/testscommon"
@@ -175,6 +176,33 @@ func TestEventsGroup_PushEvents(t *testing.T) {
 
 		assert.Equal(t, http.StatusBadRequest, resp.Code)
 		assert.True(t, wasCalled)
+	})
+
+	t.Run("oversized body is rejected before payload handling", func(t *testing.T) {
+		t.Parallel()
+
+		args := createMockEventsGroupArgs()
+		wasCalled := false
+		args.PayloadHandler = &testscommon.PayloadHandlerStub{
+			ProcessPayloadCalled: func(payload []byte, topic string, _ uint32) error {
+				wasCalled = true
+				return nil
+			},
+		}
+
+		eg, err := groups.NewEventsGroup(args)
+		require.Nil(t, err)
+
+		ws := startWebServer(eg, eventsPath, getEventsRoutesConfig())
+
+		req, _ := http.NewRequest("POST", "/events/push", strings.NewReader(strings.Repeat("a", 10<<20+1)))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+
+		ws.ServeHTTP(resp, req)
+
+		assert.Equal(t, http.StatusRequestEntityTooLarge, resp.Code)
+		assert.False(t, wasCalled)
 	})
 
 	t.Run("should work", func(t *testing.T) {

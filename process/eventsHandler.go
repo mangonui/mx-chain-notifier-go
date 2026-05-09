@@ -15,12 +15,12 @@ import (
 var log = logger.GetOrCreate("process")
 
 const (
-	setRetryDuration       = time.Millisecond * 500
-	reconnectRetryDuration = time.Second * 2
-	minRetries             = 1
+	setRetryDuration         = time.Millisecond * 500
+	reconnectRetryDuration   = time.Second * 2
+	minRetries               = 1
 	maxCheckProcessedRetries = 3
-	revertKeyPrefix        = "revert_"
-	finalizedKeyPrefix     = "finalized_"
+	revertKeyPrefix          = "revert_"
+	finalizedKeyPrefix       = "finalized_"
 
 	rabbitmqMetricPrefix = "RabbitMQ"
 	redisMetricPrefix    = "Redis"
@@ -360,7 +360,7 @@ func (eh *eventsHandler) tryCheckProcessedWithRetry(id, blockHash string) bool {
 	}
 
 	log.Error("locker retry budget exhausted", "event", id, "block hash", blockHash, "retries", maxCheckProcessedRetries)
-	return false
+	return true
 }
 
 func getPrefixLockerKey(id string) string {

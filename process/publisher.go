@@ -3,10 +3,16 @@ package process
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/multiversx/mx-chain-core-go/core/check"
 	"github.com/multiversx/mx-chain-notifier-go/common"
 	"github.com/multiversx/mx-chain-notifier-go/data"
+)
+
+const (
+	publisherQueueSize   = 1024
+	publisherSendTimeout = time.Millisecond
 )
 
 type publisher struct {
@@ -33,13 +39,13 @@ func NewPublisher(handler PublisherHandler) (*publisher, error) {
 
 	p := &publisher{
 		handler:                       handler,
-		broadcast:                     make(chan data.BlockEvents),
-		broadcastRevert:               make(chan data.RevertBlock),
-		broadcastFinalized:            make(chan data.FinalizedBlock),
-		broadcastTxs:                  make(chan data.BlockTxs),
-		broadcastScrs:                 make(chan data.BlockScrs),
-		broadcastBlockEventsWithOrder: make(chan data.BlockEventsWithOrder),
-		broadcastStateAccesses:        make(chan data.BlockStateAccesses),
+		broadcast:                     make(chan data.BlockEvents, publisherQueueSize),
+		broadcastRevert:               make(chan data.RevertBlock, publisherQueueSize),
+		broadcastFinalized:            make(chan data.FinalizedBlock, publisherQueueSize),
+		broadcastTxs:                  make(chan data.BlockTxs, publisherQueueSize),
+		broadcastScrs:                 make(chan data.BlockScrs, publisherQueueSize),
+		broadcastBlockEventsWithOrder: make(chan data.BlockEventsWithOrder, publisherQueueSize),
+		broadcastStateAccesses:        make(chan data.BlockStateAccesses, publisherQueueSize),
 		closeChan:                     make(chan struct{}),
 	}
 
@@ -89,57 +95,47 @@ func (p *publisher) run(ctx context.Context) {
 
 // Broadcast will handle the block events pushed by producers
 func (p *publisher) Broadcast(events data.BlockEvents) {
-	select {
-	case p.broadcast <- events:
-	case <-p.closeChan:
-	}
+	sendWithTimeout(p.broadcast, events, p.closeChan)
 }
 
 // BroadcastRevert will handle the revert event pushed by producers
 func (p *publisher) BroadcastRevert(events data.RevertBlock) {
-	select {
-	case p.broadcastRevert <- events:
-	case <-p.closeChan:
-	}
+	sendWithTimeout(p.broadcastRevert, events, p.closeChan)
 }
 
 // BroadcastFinalized will handle the finalized event pushed by producers
 func (p *publisher) BroadcastFinalized(events data.FinalizedBlock) {
-	select {
-	case p.broadcastFinalized <- events:
-	case <-p.closeChan:
-	}
+	sendWithTimeout(p.broadcastFinalized, events, p.closeChan)
 }
 
 // BroadcastTxs will handle the txs event pushed by producers
 func (p *publisher) BroadcastTxs(events data.BlockTxs) {
-	select {
-	case p.broadcastTxs <- events:
-	case <-p.closeChan:
-	}
+	sendWithTimeout(p.broadcastTxs, events, p.closeChan)
 }
 
 // BroadcastScrs will handle the scrs event pushed by producers
 func (p *publisher) BroadcastScrs(events data.BlockScrs) {
-	select {
-	case p.broadcastScrs <- events:
-	case <-p.closeChan:
-	}
+	sendWithTimeout(p.broadcastScrs, events, p.closeChan)
 }
 
 // BroadcastBlockEventsWithOrder will handle the full block events pushed by producers
 func (p *publisher) BroadcastBlockEventsWithOrder(events data.BlockEventsWithOrder) {
-	select {
-	case p.broadcastBlockEventsWithOrder <- events:
-	case <-p.closeChan:
-	}
+	sendWithTimeout(p.broadcastBlockEventsWithOrder, events, p.closeChan)
 }
 
 // BroadcastStateAccesses will handle state accesses pushed by producers
 func (p *publisher) BroadcastStateAccesses(events data.BlockStateAccesses) {
+	sendWithTimeout(p.broadcastStateAccesses, events, p.closeChan)
+}
+
+func sendWithTimeout[T any](channel chan T, value T, closeChan <-chan struct{}) {
+	timer := time.NewTimer(publisherSendTimeout)
+	defer timer.Stop()
+
 	select {
-	case p.broadcastStateAccesses <- events:
-	case <-p.closeChan:
+	case channel <- value:
+	case <-closeChan:
+	case <-timer.C:
 	}
 }
 
