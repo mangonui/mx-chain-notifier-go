@@ -28,12 +28,13 @@ type ArgsWebSocketProcessor struct {
 }
 
 type websocketProcessor struct {
-	dispatcher     dispatcher.Dispatcher
-	upgrader       dispatcher.WSUpgrader
-	marshaller     marshal.Marshalizer
-	maxConnections int64
-	connCount      atomic.Int64
-	connsByIP      sync.Map
+	dispatcher       dispatcher.Dispatcher
+	upgrader         dispatcher.WSUpgrader
+	marshaller       marshal.Marshalizer
+	maxConnections   int64
+	connCount        atomic.Int64
+	ipConnectionsMut sync.Mutex
+	ipConnections    map[string]int64
 }
 
 // NewWebSocketProcessor creates a new websocketProcessor component
@@ -53,6 +54,7 @@ func NewWebSocketProcessor(args ArgsWebSocketProcessor) (*websocketProcessor, er
 		upgrader:       args.Upgrader,
 		marshaller:     args.Marshaller,
 		maxConnections: maxConn,
+		ipConnections:  make(map[string]int64),
 	}, nil
 }
 
@@ -121,21 +123,14 @@ func runPump(name string, release func(), pump func()) {
 }
 
 func (wh *websocketProcessor) tryReserveConnection(remoteIP string) bool {
-	ipCounter := wh.ipCounter(remoteIP)
-	for {
-		current := ipCounter.Load()
-		if current >= defaultMaxConnectionsPerIP {
-			return false
-		}
-		if ipCounter.CompareAndSwap(current, current+1) {
-			break
-		}
+	if !wh.tryReserveIPConnection(remoteIP) {
+		return false
 	}
 
 	for {
 		current := wh.connCount.Load()
 		if current >= wh.maxConnections {
-			wh.releaseIPConnection(remoteIP, ipCounter)
+			wh.releaseIPConnection(remoteIP)
 			return false
 		}
 		if wh.connCount.CompareAndSwap(current, current+1) {
@@ -146,25 +141,33 @@ func (wh *websocketProcessor) tryReserveConnection(remoteIP string) bool {
 
 func (wh *websocketProcessor) releaseConnection(remoteIP string) {
 	wh.connCount.Add(-1)
-	counterValue, ok := wh.connsByIP.Load(remoteIP)
-	if !ok {
+	wh.releaseIPConnection(remoteIP)
+}
+
+func (wh *websocketProcessor) tryReserveIPConnection(remoteIP string) bool {
+	wh.ipConnectionsMut.Lock()
+	defer wh.ipConnectionsMut.Unlock()
+
+	current := wh.ipConnections[remoteIP]
+	if current >= defaultMaxConnectionsPerIP {
+		return false
+	}
+
+	wh.ipConnections[remoteIP] = current + 1
+	return true
+}
+
+func (wh *websocketProcessor) releaseIPConnection(remoteIP string) {
+	wh.ipConnectionsMut.Lock()
+	defer wh.ipConnectionsMut.Unlock()
+
+	current := wh.ipConnections[remoteIP]
+	if current <= 1 {
+		delete(wh.ipConnections, remoteIP)
 		return
 	}
 
-	wh.releaseIPConnection(remoteIP, counterValue.(*atomic.Int64))
-}
-
-func (wh *websocketProcessor) ipCounter(remoteIP string) *atomic.Int64 {
-	counterValue, _ := wh.connsByIP.LoadOrStore(remoteIP, &atomic.Int64{})
-	return counterValue.(*atomic.Int64)
-}
-
-func (wh *websocketProcessor) releaseIPConnection(remoteIP string, counter *atomic.Int64) {
-	if counter.Add(-1) <= 0 {
-		if current, ok := wh.connsByIP.Load(remoteIP); ok && current == counter {
-			wh.connsByIP.Delete(remoteIP)
-		}
-	}
+	wh.ipConnections[remoteIP] = current - 1
 }
 
 func remoteIPFromRequest(r *http.Request) string {

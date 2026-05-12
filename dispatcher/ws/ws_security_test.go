@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/multiversx/mx-chain-core-go/core/mock"
@@ -129,9 +128,9 @@ func TestWebSocketProcessor_RejectsConnectionsAbovePerIPLimit(t *testing.T) {
 	processor, err := NewWebSocketProcessor(args)
 	require.NoError(t, err)
 
-	counter := &atomic.Int64{}
-	counter.Store(defaultMaxConnectionsPerIP)
-	processor.connsByIP.Store("192.0.2.10", counter)
+	processor.ipConnectionsMut.Lock()
+	processor.ipConnections["192.0.2.10"] = defaultMaxConnectionsPerIP
+	processor.ipConnectionsMut.Unlock()
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/hub/ws", nil)
@@ -140,7 +139,7 @@ func TestWebSocketProcessor_RejectsConnectionsAbovePerIPLimit(t *testing.T) {
 
 	require.Equal(t, http.StatusServiceUnavailable, response.Code)
 	require.Zero(t, processor.connCount.Load())
-	require.Equal(t, int64(defaultMaxConnectionsPerIP), counter.Load())
+	require.Equal(t, int64(defaultMaxConnectionsPerIP), processor.ipConnections["192.0.2.10"])
 }
 
 func TestWebSocketProcessor_ReleasesReservationOnUpgradeError(t *testing.T) {
@@ -162,5 +161,30 @@ func TestWebSocketProcessor_ReleasesReservationOnUpgradeError(t *testing.T) {
 	request := httptest.NewRequest(http.MethodGet, "/hub/ws", nil)
 	processor.ServeHTTP(response, request)
 
+	require.Zero(t, processor.connCount.Load())
+	require.Empty(t, processor.ipConnections)
+}
+
+func TestWebSocketProcessor_PerIPCounterCleanupDoesNotLoseActiveReservations(t *testing.T) {
+	t.Parallel()
+
+	args := ArgsWebSocketProcessor{
+		Dispatcher:     &mocks.HubStub{},
+		Upgrader:       &mocks.WSUpgraderStub{},
+		Marshaller:     &mock.MarshalizerMock{},
+		MaxConnections: defaultMaxConnections,
+	}
+	processor, err := NewWebSocketProcessor(args)
+	require.NoError(t, err)
+
+	require.True(t, processor.tryReserveConnection("192.0.2.20"))
+	require.True(t, processor.tryReserveConnection("192.0.2.20"))
+
+	processor.releaseConnection("192.0.2.20")
+	require.Equal(t, int64(1), processor.ipConnections["192.0.2.20"])
+	require.Equal(t, int64(1), processor.connCount.Load())
+
+	processor.releaseConnection("192.0.2.20")
+	require.NotContains(t, processor.ipConnections, "192.0.2.20")
 	require.Zero(t, processor.connCount.Load())
 }
