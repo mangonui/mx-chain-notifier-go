@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/multiversx/mx-chain-core-go/core/mock"
@@ -66,6 +67,48 @@ func TestWebSocketProcessor_DefaultsMaxConnectionsWhenZero(t *testing.T) {
 	processor, err := NewWebSocketProcessor(args)
 	require.NoError(t, err)
 	require.Equal(t, int64(defaultMaxConnections), processor.maxConnections)
+}
+
+func TestRunPump_NormalExitCallsRelease(t *testing.T) {
+	t.Parallel()
+
+	released := 0
+	runPump("test", func() { released++ }, func() {})
+	require.Equal(t, 1, released)
+}
+
+func TestRunPump_PanicIsRecoveredAndReleaseStillRuns(t *testing.T) {
+	t.Parallel()
+
+	released := 0
+	require.NotPanics(t, func() {
+		runPump("test", func() { released++ }, func() { panic("boom") })
+	})
+	require.Equal(t, 1, released)
+}
+
+func TestWebSocketProcessor_ReleaseIsOnce(t *testing.T) {
+	t.Parallel()
+
+	args := ArgsWebSocketProcessor{
+		Dispatcher:     &mocks.HubStub{},
+		Upgrader:       &mocks.WSUpgraderStub{},
+		Marshaller:     &mock.MarshalizerMock{},
+		MaxConnections: 4,
+	}
+	processor, err := NewWebSocketProcessor(args)
+	require.NoError(t, err)
+	processor.connCount.Store(1)
+
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(processor.releaseConnection) }
+
+	release()
+	release()
+	release()
+
+	require.Zero(t, processor.connCount.Load(),
+		"sync.Once must guarantee the per-connection release decrements exactly once")
 }
 
 func TestWebSocketProcessor_ReleasesReservationOnUpgradeError(t *testing.T) {

@@ -1,7 +1,9 @@
 package ws
 
 import (
+	"fmt"
 	"net/http"
+	"sync"
 	"sync/atomic"
 
 	"github.com/multiversx/mx-chain-core-go/core/check"
@@ -70,9 +72,12 @@ func (wh *websocketProcessor) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(wh.releaseConnection) }
+
 	conn, err := wh.upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		wh.releaseConnection()
+		release()
 		log.Error("failed upgrading connection", "err", err.Error())
 		return
 	}
@@ -84,18 +89,29 @@ func (wh *websocketProcessor) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 	}
 	wsDispatcher, err := newWebSocketDispatcher(args)
 	if err != nil {
-		wh.releaseConnection()
+		release()
 		_ = conn.Close()
 		log.Error("failed creating a new websocket dispatcher", "err", err.Error())
 		return
 	}
 	wsDispatcher.dispatcher.RegisterEvent(wsDispatcher)
 
-	go func() {
-		defer wh.releaseConnection()
-		wsDispatcher.writePump()
+	go runPump("writePump", release, wsDispatcher.writePump)
+	go runPump("readPump", release, wsDispatcher.readPump)
+}
+
+// runPump executes a websocket pump under a panic guard and guarantees the
+// reservation release runs exactly once across both pumps (caller wraps
+// release with sync.Once). A panic inside the pump is logged with the pump
+// name and recovered so it does not crash the process.
+func runPump(name string, release func(), pump func()) {
+	defer release()
+	defer func() {
+		if r := recover(); r != nil {
+			log.Error("panic in websocket pump", "pump", name, "panic", fmt.Sprintf("%v", r))
+		}
 	}()
-	go wsDispatcher.readPump()
+	pump()
 }
 
 func (wh *websocketProcessor) tryReserveConnection() bool {
