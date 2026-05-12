@@ -2,6 +2,7 @@ package ws
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -12,7 +13,10 @@ import (
 	"github.com/multiversx/mx-chain-notifier-go/dispatcher"
 )
 
-const defaultMaxConnections = 1024
+const (
+	defaultMaxConnections      = 1024
+	defaultMaxConnectionsPerIP = 64
+)
 
 // ArgsWebSocketProcessor defines the argument needed to create a websocketHandler.
 // MaxConnections <= 0 means "use the default cap (1024)".
@@ -29,6 +33,7 @@ type websocketProcessor struct {
 	marshaller     marshal.Marshalizer
 	maxConnections int64
 	connCount      atomic.Int64
+	connsByIP      sync.Map
 }
 
 // NewWebSocketProcessor creates a new websocketProcessor component
@@ -67,13 +72,14 @@ func checkArgs(args ArgsWebSocketProcessor) error {
 
 // ServeHTTP is the entry point used by a http server to serve the websocket upgrader
 func (wh *websocketProcessor) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if !wh.tryReserveConnection() {
+	remoteIP := remoteIPFromRequest(r)
+	if !wh.tryReserveConnection(remoteIP) {
 		http.Error(w, "too many websocket connections", http.StatusServiceUnavailable)
 		return
 	}
 
 	var releaseOnce sync.Once
-	release := func() { releaseOnce.Do(wh.releaseConnection) }
+	release := func() { releaseOnce.Do(func() { wh.releaseConnection(remoteIP) }) }
 
 	conn, err := wh.upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -114,10 +120,22 @@ func runPump(name string, release func(), pump func()) {
 	pump()
 }
 
-func (wh *websocketProcessor) tryReserveConnection() bool {
+func (wh *websocketProcessor) tryReserveConnection(remoteIP string) bool {
+	ipCounter := wh.ipCounter(remoteIP)
+	for {
+		current := ipCounter.Load()
+		if current >= defaultMaxConnectionsPerIP {
+			return false
+		}
+		if ipCounter.CompareAndSwap(current, current+1) {
+			break
+		}
+	}
+
 	for {
 		current := wh.connCount.Load()
 		if current >= wh.maxConnections {
+			wh.releaseIPConnection(remoteIP, ipCounter)
 			return false
 		}
 		if wh.connCount.CompareAndSwap(current, current+1) {
@@ -126,8 +144,39 @@ func (wh *websocketProcessor) tryReserveConnection() bool {
 	}
 }
 
-func (wh *websocketProcessor) releaseConnection() {
+func (wh *websocketProcessor) releaseConnection(remoteIP string) {
 	wh.connCount.Add(-1)
+	counterValue, ok := wh.connsByIP.Load(remoteIP)
+	if !ok {
+		return
+	}
+
+	wh.releaseIPConnection(remoteIP, counterValue.(*atomic.Int64))
+}
+
+func (wh *websocketProcessor) ipCounter(remoteIP string) *atomic.Int64 {
+	counterValue, _ := wh.connsByIP.LoadOrStore(remoteIP, &atomic.Int64{})
+	return counterValue.(*atomic.Int64)
+}
+
+func (wh *websocketProcessor) releaseIPConnection(remoteIP string, counter *atomic.Int64) {
+	if counter.Add(-1) <= 0 {
+		if current, ok := wh.connsByIP.Load(remoteIP); ok && current == counter {
+			wh.connsByIP.Delete(remoteIP)
+		}
+	}
+}
+
+func remoteIPFromRequest(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	if r.RemoteAddr != "" {
+		return r.RemoteAddr
+	}
+
+	return "unknown"
 }
 
 // IsInterfaceNil returns true if there is no value under the interface

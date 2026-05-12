@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/multiversx/mx-chain-notifier-go/dispatcher"
@@ -23,9 +24,10 @@ func NewWSUpgraderWrapper(readBuffSize int, writeBuffSize int) (dispatcher.WSUpg
 	}
 
 	upgrader := &websocket.Upgrader{
-		ReadBufferSize:  readBuffSize,
-		WriteBufferSize: writeBuffSize,
-		CheckOrigin:     checkOrigin,
+		ReadBufferSize:   readBuffSize,
+		WriteBufferSize:  writeBuffSize,
+		HandshakeTimeout: 10 * time.Second,
+		CheckOrigin:      checkOrigin,
 	}
 
 	return &wsUpgraderWrapper{

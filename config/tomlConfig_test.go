@@ -230,6 +230,7 @@ func TestAPIConfig(t *testing.T) {
 					{
 						Name: "/ws",
 						Open: true,
+						Auth: true,
 					},
 				},
 			},
@@ -261,7 +262,7 @@ func TestAPIConfig(t *testing.T) {
 
 [APIPackages.hub]
     Routes = [
-        { Name = "/ws", Open = true },
+        { Name = "/ws", Open = true, Auth = true },
     ]
 
 [APIPackages.status]

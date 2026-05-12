@@ -10,7 +10,7 @@
 
 [APIPackages.hub]
     Routes = [
-        { Name = "/ws", Open = true },
+        { Name = "/ws", Open = true, Auth = true },
     ]
 
 [APIPackages.status]

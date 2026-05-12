@@ -30,6 +30,7 @@ func NewHubGroup(facade HubFacadeHandler) (*hubGroup, error) {
 		facade:    facade,
 		baseGroup: newBaseGroup(),
 	}
+	h.createMiddlewares()
 
 	endpoints := []*shared.EndpointHandlerData{
 		{
@@ -46,6 +47,16 @@ func NewHubGroup(facade HubFacadeHandler) (*hubGroup, error) {
 
 func (h *hubGroup) wsHandler(c *gin.Context) {
 	h.facade.ServeHTTP(c.Writer, c.Request)
+}
+
+func (h *hubGroup) createMiddlewares() {
+	user, pass := h.facade.GetConnectorUserAndPass()
+
+	if user != "" && pass != "" {
+		h.authMiddleware = gin.BasicAuth(gin.Accounts{
+			user: pass,
+		})
+	}
 }
 
 // IsInterfaceNil returns true if there is no value under the interface
