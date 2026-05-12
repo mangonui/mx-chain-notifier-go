@@ -3,9 +3,10 @@ package ws
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 
-	"github.com/multiversx/mx-chain-notifier-go/dispatcher"
 	"github.com/gorilla/websocket"
+	"github.com/multiversx/mx-chain-notifier-go/dispatcher"
 )
 
 type wsUpgraderWrapper struct {
@@ -24,7 +25,7 @@ func NewWSUpgraderWrapper(readBuffSize int, writeBuffSize int) (dispatcher.WSUpg
 	upgrader := &websocket.Upgrader{
 		ReadBufferSize:  readBuffSize,
 		WriteBufferSize: writeBuffSize,
-		CheckOrigin:     func(r *http.Request) bool { return true },
+		CheckOrigin:     checkOrigin,
 	}
 
 	return &wsUpgraderWrapper{
@@ -35,4 +36,18 @@ func NewWSUpgraderWrapper(readBuffSize int, writeBuffSize int) (dispatcher.WSUpg
 // Upgrade upgrades the HTTP server connection to the websocket protocol
 func (wuw *wsUpgraderWrapper) Upgrade(w http.ResponseWriter, r *http.Request, responseHeader http.Header) (dispatcher.WSConnection, error) {
 	return wuw.upgrader.Upgrade(w, r, responseHeader)
+}
+
+func checkOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+
+	originURL, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+
+	return originURL.Host == r.Host
 }
