@@ -56,7 +56,7 @@ func (nr *notifierRunner) Start() error {
 		return err
 	}
 
-	wsHandler, err := factory.CreateWSHandler(publisherType, commonHub, externalMarshaller)
+	wsHandler, err := factory.CreateWSHandler(publisherType, commonHub, externalMarshaller, nr.configs.MainConfig.ConnectorApi.MaxConnections)
 	if err != nil {
 		return err
 	}

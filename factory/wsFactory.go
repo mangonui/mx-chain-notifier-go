@@ -18,28 +18,30 @@ const (
 	writeBufferSize = 1024
 )
 
-// CreateWSHandler creates websocket handler component based on api type
-func CreateWSHandler(apiType string, wsDispatcher dispatcher.Dispatcher, marshaller marshal.Marshalizer) (dispatcher.WSHandler, error) {
+// CreateWSHandler creates websocket handler component based on api type.
+// maxConnections caps concurrent /hub/ws connections (<=0 means use the default).
+func CreateWSHandler(apiType string, wsDispatcher dispatcher.Dispatcher, marshaller marshal.Marshalizer, maxConnections int64) (dispatcher.WSHandler, error) {
 	switch apiType {
 	case common.MessageQueuePublisherType:
 		return &disabled.WSHandler{}, nil
 	case common.WSPublisherType:
-		return createWSHandler(wsDispatcher, marshaller)
+		return createWSHandler(wsDispatcher, marshaller, maxConnections)
 	default:
 		return nil, common.ErrInvalidAPIType
 	}
 }
 
-func createWSHandler(wsDispatcher dispatcher.Dispatcher, marshaller marshal.Marshalizer) (dispatcher.WSHandler, error) {
+func createWSHandler(wsDispatcher dispatcher.Dispatcher, marshaller marshal.Marshalizer, maxConnections int64) (dispatcher.WSHandler, error) {
 	upgrader, err := ws.NewWSUpgraderWrapper(readBufferSize, writeBufferSize)
 	if err != nil {
 		return nil, err
 	}
 
 	args := ws.ArgsWebSocketProcessor{
-		Dispatcher: wsDispatcher,
-		Upgrader:   upgrader,
-		Marshaller: marshaller,
+		Dispatcher:     wsDispatcher,
+		Upgrader:       upgrader,
+		Marshaller:     marshaller,
+		MaxConnections: maxConnections,
 	}
 	return ws.NewWebSocketProcessor(args)
 }

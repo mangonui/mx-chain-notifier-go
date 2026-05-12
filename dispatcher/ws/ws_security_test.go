@@ -31,6 +31,7 @@ func TestCheckOrigin(t *testing.T) {
 func TestWebSocketProcessor_RejectsConnectionsAboveLimit(t *testing.T) {
 	t.Parallel()
 
+	const testCap = int64(3)
 	args := ArgsWebSocketProcessor{
 		Dispatcher: &mocks.HubStub{},
 		Upgrader: &mocks.WSUpgraderStub{
@@ -39,18 +40,32 @@ func TestWebSocketProcessor_RejectsConnectionsAboveLimit(t *testing.T) {
 				return nil, nil
 			},
 		},
-		Marshaller: &mock.MarshalizerMock{},
+		Marshaller:     &mock.MarshalizerMock{},
+		MaxConnections: testCap,
 	}
 	processor, err := NewWebSocketProcessor(args)
 	require.NoError(t, err)
-	processor.connCount.Store(maxWSConnections)
+	processor.connCount.Store(testCap)
 
 	response := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/hub/ws", nil)
 	processor.ServeHTTP(response, request)
 
 	require.Equal(t, http.StatusServiceUnavailable, response.Code)
-	require.Equal(t, int64(maxWSConnections), processor.connCount.Load())
+	require.Equal(t, testCap, processor.connCount.Load())
+}
+
+func TestWebSocketProcessor_DefaultsMaxConnectionsWhenZero(t *testing.T) {
+	t.Parallel()
+
+	args := ArgsWebSocketProcessor{
+		Dispatcher: &mocks.HubStub{},
+		Upgrader:   &mocks.WSUpgraderStub{},
+		Marshaller: &mock.MarshalizerMock{},
+	}
+	processor, err := NewWebSocketProcessor(args)
+	require.NoError(t, err)
+	require.Equal(t, int64(defaultMaxConnections), processor.maxConnections)
 }
 
 func TestWebSocketProcessor_ReleasesReservationOnUpgradeError(t *testing.T) {

@@ -10,20 +10,23 @@ import (
 	"github.com/multiversx/mx-chain-notifier-go/dispatcher"
 )
 
-const maxWSConnections = 1024
+const defaultMaxConnections = 1024
 
-// ArgsWebSocketProcessor defines the argument needed to create a websocketHandler
+// ArgsWebSocketProcessor defines the argument needed to create a websocketHandler.
+// MaxConnections <= 0 means "use the default cap (1024)".
 type ArgsWebSocketProcessor struct {
-	Dispatcher dispatcher.Dispatcher
-	Upgrader   dispatcher.WSUpgrader
-	Marshaller marshal.Marshalizer
+	Dispatcher     dispatcher.Dispatcher
+	Upgrader       dispatcher.WSUpgrader
+	Marshaller     marshal.Marshalizer
+	MaxConnections int64
 }
 
 type websocketProcessor struct {
-	dispatcher dispatcher.Dispatcher
-	upgrader   dispatcher.WSUpgrader
-	marshaller marshal.Marshalizer
-	connCount  atomic.Int64
+	dispatcher     dispatcher.Dispatcher
+	upgrader       dispatcher.WSUpgrader
+	marshaller     marshal.Marshalizer
+	maxConnections int64
+	connCount      atomic.Int64
 }
 
 // NewWebSocketProcessor creates a new websocketProcessor component
@@ -33,10 +36,16 @@ func NewWebSocketProcessor(args ArgsWebSocketProcessor) (*websocketProcessor, er
 		return nil, err
 	}
 
+	maxConn := args.MaxConnections
+	if maxConn <= 0 {
+		maxConn = defaultMaxConnections
+	}
+
 	return &websocketProcessor{
-		dispatcher: args.Dispatcher,
-		upgrader:   args.Upgrader,
-		marshaller: args.Marshaller,
+		dispatcher:     args.Dispatcher,
+		upgrader:       args.Upgrader,
+		marshaller:     args.Marshaller,
+		maxConnections: maxConn,
 	}, nil
 }
 
@@ -92,7 +101,7 @@ func (wh *websocketProcessor) ServeHTTP(w http.ResponseWriter, r *http.Request) 
 func (wh *websocketProcessor) tryReserveConnection() bool {
 	for {
 		current := wh.connCount.Load()
-		if current >= maxWSConnections {
+		if current >= wh.maxConnections {
 			return false
 		}
 		if wh.connCount.CompareAndSwap(current, current+1) {

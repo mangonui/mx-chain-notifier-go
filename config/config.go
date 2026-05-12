@@ -40,10 +40,11 @@ type AddressConverterConfig struct {
 
 // ConnectorApiConfig maps the connector configuration
 type ConnectorApiConfig struct {
-	Enabled  bool
-	Host     string
-	Username string
-	Password string
+	Enabled        bool
+	Host           string
+	Username       string
+	Password       string
+	MaxConnections int64
 }
 
 // APIRoutesConfig holds the configuration related to Rest API routes
