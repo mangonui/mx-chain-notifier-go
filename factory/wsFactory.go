@@ -20,28 +20,30 @@ const (
 
 // CreateWSHandler creates websocket handler component based on api type.
 // maxConnections caps concurrent /hub/ws connections (<=0 means use the default).
-func CreateWSHandler(apiType string, wsDispatcher dispatcher.Dispatcher, marshaller marshal.Marshalizer, maxConnections int64) (dispatcher.WSHandler, error) {
+func CreateWSHandler(apiType string, wsDispatcher dispatcher.Dispatcher, marshaller marshal.Marshalizer, connectorAPIConfig config.ConnectorApiConfig) (dispatcher.WSHandler, error) {
 	switch apiType {
 	case common.MessageQueuePublisherType:
 		return &disabled.WSHandler{}, nil
 	case common.WSPublisherType:
-		return createWSHandler(wsDispatcher, marshaller, maxConnections)
+		return createWSHandler(wsDispatcher, marshaller, connectorAPIConfig)
 	default:
 		return nil, common.ErrInvalidAPIType
 	}
 }
 
-func createWSHandler(wsDispatcher dispatcher.Dispatcher, marshaller marshal.Marshalizer, maxConnections int64) (dispatcher.WSHandler, error) {
-	upgrader, err := ws.NewWSUpgraderWrapper(readBufferSize, writeBufferSize)
+func createWSHandler(wsDispatcher dispatcher.Dispatcher, marshaller marshal.Marshalizer, connectorAPIConfig config.ConnectorApiConfig) (dispatcher.WSHandler, error) {
+	upgrader, err := ws.NewWSUpgraderWrapper(readBufferSize, writeBufferSize, connectorAPIConfig.AllowEmptyOrigin)
 	if err != nil {
 		return nil, err
 	}
 
 	args := ws.ArgsWebSocketProcessor{
-		Dispatcher:     wsDispatcher,
-		Upgrader:       upgrader,
-		Marshaller:     marshaller,
-		MaxConnections: maxConnections,
+		Dispatcher:               wsDispatcher,
+		Upgrader:                 upgrader,
+		Marshaller:               marshaller,
+		MaxConnections:           connectorAPIConfig.MaxConnections,
+		MaxConnectionRatePerIP:   connectorAPIConfig.MaxConnectionRatePerIP,
+		ConnectionRateBurstPerIP: connectorAPIConfig.ConnectionRateBurstPerIP,
 	}
 	return ws.NewWebSocketProcessor(args)
 }

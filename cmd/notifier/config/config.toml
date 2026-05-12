@@ -66,6 +66,20 @@
     Username = ""
     Password = ""
 
+    # MaxConnections caps concurrent /hub/ws clients. Values <= 0 use the default cap.
+    MaxConnections = 1024
+
+    # AllowEmptyOrigin permits non-browser WebSocket clients that do not send an Origin header.
+    # Keep false for internet-facing deployments; set true only for trusted server-to-server clients.
+    AllowEmptyOrigin = false
+
+    # MaxConnectionRatePerIP caps WebSocket connection attempts per IP per second.
+    # Set to -1 only for trusted, private deployments that need to disable rate limiting.
+    MaxConnectionRatePerIP = 10
+
+    # ConnectionRateBurstPerIP is the token bucket burst for per-IP WebSocket connection attempts.
+    ConnectionRateBurstPerIP = 20
+
 [Redis]
     # The url used to connect to a pubsub server
     Url = "redis://localhost:6379/0"

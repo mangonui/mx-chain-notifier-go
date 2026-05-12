@@ -64,4 +64,15 @@ func TestNewWebSocketHandler(t *testing.T) {
 		require.False(t, check.IfNil(wh))
 		require.Nil(t, err)
 	})
+
+	t.Run("invalid rate limit config", func(t *testing.T) {
+		t.Parallel()
+
+		args := createMockArgsWSHandler()
+		args.MaxConnectionRatePerIP = -2
+
+		wh, err := ws.NewWebSocketProcessor(args)
+		require.True(t, check.IfNil(wh))
+		require.Error(t, err)
+	})
 }

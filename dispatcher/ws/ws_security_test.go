@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/multiversx/mx-chain-core-go/core/mock"
 	"github.com/multiversx/mx-chain-notifier-go/dispatcher"
@@ -17,16 +18,17 @@ func TestCheckOrigin(t *testing.T) {
 	t.Parallel()
 
 	req := httptest.NewRequest(http.MethodGet, "http://notifier.local/hub/ws", nil)
-	require.True(t, checkOrigin(req))
+	require.False(t, checkOrigin(req, false))
+	require.True(t, checkOrigin(req, true))
 
 	req.Header.Set("Origin", "http://notifier.local")
-	require.True(t, checkOrigin(req))
+	require.True(t, checkOrigin(req, false))
 
 	req.Header.Set("Origin", "https://evil.example")
-	require.False(t, checkOrigin(req))
+	require.False(t, checkOrigin(req, true))
 
 	req.Header.Set("Origin", "://bad-origin")
-	require.False(t, checkOrigin(req))
+	require.False(t, checkOrigin(req, true))
 }
 
 func TestWebSocketProcessor_RejectsConnectionsAboveLimit(t *testing.T) {
@@ -177,8 +179,8 @@ func TestWebSocketProcessor_PerIPCounterCleanupDoesNotLoseActiveReservations(t *
 	processor, err := NewWebSocketProcessor(args)
 	require.NoError(t, err)
 
-	require.True(t, processor.tryReserveConnection("192.0.2.20"))
-	require.True(t, processor.tryReserveConnection("192.0.2.20"))
+	require.Equal(t, reservationOK, processor.tryReserveConnection("192.0.2.20"))
+	require.Equal(t, reservationOK, processor.tryReserveConnection("192.0.2.20"))
 
 	processor.releaseConnection("192.0.2.20")
 	require.Equal(t, int64(1), processor.ipConnections["192.0.2.20"])
@@ -187,4 +189,52 @@ func TestWebSocketProcessor_PerIPCounterCleanupDoesNotLoseActiveReservations(t *
 	processor.releaseConnection("192.0.2.20")
 	require.NotContains(t, processor.ipConnections, "192.0.2.20")
 	require.Zero(t, processor.connCount.Load())
+}
+
+func TestWebSocketProcessor_RateLimitsConnectionAttemptsPerIP(t *testing.T) {
+	t.Parallel()
+
+	args := ArgsWebSocketProcessor{
+		Dispatcher:               &mocks.HubStub{},
+		Upgrader:                 &mocks.WSUpgraderStub{},
+		Marshaller:               &mock.MarshalizerMock{},
+		MaxConnections:           defaultMaxConnections,
+		MaxConnectionRatePerIP:   1,
+		ConnectionRateBurstPerIP: 1,
+	}
+	processor, err := NewWebSocketProcessor(args)
+	require.NoError(t, err)
+
+	require.Equal(t, reservationOK, processor.tryReserveConnection("192.0.2.30"))
+	processor.releaseConnection("192.0.2.30")
+	require.Equal(t, reservationRateLimited, processor.tryReserveConnection("192.0.2.30"))
+	require.Zero(t, processor.connCount.Load())
+}
+
+func TestWebSocketProcessor_RateLimiterRefillsAndPrunes(t *testing.T) {
+	t.Parallel()
+
+	args := ArgsWebSocketProcessor{
+		Dispatcher:               &mocks.HubStub{},
+		Upgrader:                 &mocks.WSUpgraderStub{},
+		Marshaller:               &mock.MarshalizerMock{},
+		MaxConnectionRatePerIP:   2,
+		ConnectionRateBurstPerIP: 3,
+	}
+	processor, err := NewWebSocketProcessor(args)
+	require.NoError(t, err)
+
+	now := time.Unix(100, 0)
+	require.True(t, processor.allowConnectionAttempt("192.0.2.40", now))
+	require.True(t, processor.allowConnectionAttempt("192.0.2.40", now))
+	require.True(t, processor.allowConnectionAttempt("192.0.2.40", now))
+	require.False(t, processor.allowConnectionAttempt("192.0.2.40", now))
+	require.True(t, processor.allowConnectionAttempt("192.0.2.40", now.Add(time.Second)))
+
+	processor.rateLimitMut.Lock()
+	processor.rateLimiters["192.0.2.41"] = &ipRateLimiter{lastSeen: now.Add(-rateLimiterMaxIdleDuration - time.Second)}
+	processor.pruneIdleRateLimiters(now)
+	_, exists := processor.rateLimiters["192.0.2.41"]
+	processor.rateLimitMut.Unlock()
+	require.False(t, exists)
 }

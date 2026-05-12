@@ -15,7 +15,7 @@ type wsUpgraderWrapper struct {
 }
 
 // NewWSUpgraderWrapper creates a websocket upgrader wrapper
-func NewWSUpgraderWrapper(readBuffSize int, writeBuffSize int) (dispatcher.WSUpgrader, error) {
+func NewWSUpgraderWrapper(readBuffSize int, writeBuffSize int, allowEmptyOrigin bool) (dispatcher.WSUpgrader, error) {
 	if readBuffSize <= 0 {
 		return nil, fmt.Errorf("invalid buffer size provided: %d", readBuffSize)
 	}
@@ -27,7 +27,7 @@ func NewWSUpgraderWrapper(readBuffSize int, writeBuffSize int) (dispatcher.WSUpg
 		ReadBufferSize:   readBuffSize,
 		WriteBufferSize:  writeBuffSize,
 		HandshakeTimeout: 10 * time.Second,
-		CheckOrigin:      checkOrigin,
+		CheckOrigin:      checkOriginFunc(allowEmptyOrigin),
 	}
 
 	return &wsUpgraderWrapper{
@@ -40,10 +40,16 @@ func (wuw *wsUpgraderWrapper) Upgrade(w http.ResponseWriter, r *http.Request, re
 	return wuw.upgrader.Upgrade(w, r, responseHeader)
 }
 
-func checkOrigin(r *http.Request) bool {
+func checkOriginFunc(allowEmptyOrigin bool) func(r *http.Request) bool {
+	return func(r *http.Request) bool {
+		return checkOrigin(r, allowEmptyOrigin)
+	}
+}
+
+func checkOrigin(r *http.Request, allowEmptyOrigin bool) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
-		return true
+		return allowEmptyOrigin
 	}
 
 	originURL, err := url.Parse(origin)

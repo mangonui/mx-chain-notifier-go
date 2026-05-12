@@ -22,6 +22,10 @@ func TestMainConfig(t *testing.T) {
 	connectorAPIHost := "5000"
 	connectorAPIUsername := "guest"
 	connectorAPIPassword := "guest"
+	connectorAPIMaxConnections := int64(1024)
+	connectorAPIAllowEmptyOrigin := false
+	connectorAPIMaxConnectionRatePerIP := int64(10)
+	connectorAPIConnectionRateBurstPerIP := int64(20)
 
 	redisURL := "redis://localhost:6379/0"
 	redisMasterName := "mymaster"
@@ -66,10 +70,14 @@ func TestMainConfig(t *testing.T) {
 			DataMarshallerType:         wsConnMarshallerType,
 		},
 		ConnectorApi: config.ConnectorApiConfig{
-			Enabled:  true,
-			Host:     connectorAPIHost,
-			Username: connectorAPIUsername,
-			Password: connectorAPIPassword,
+			Enabled:                  true,
+			Host:                     connectorAPIHost,
+			Username:                 connectorAPIUsername,
+			Password:                 connectorAPIPassword,
+			MaxConnections:           connectorAPIMaxConnections,
+			AllowEmptyOrigin:         connectorAPIAllowEmptyOrigin,
+			MaxConnectionRatePerIP:   connectorAPIMaxConnectionRatePerIP,
+			ConnectionRateBurstPerIP: connectorAPIConnectionRateBurstPerIP,
 		},
 		Redis: config.RedisConfig{
 			Url:            redisURL,
@@ -159,6 +167,10 @@ func TestMainConfig(t *testing.T) {
     # in api.toml config file 
     Username = "` + connectorAPIUsername + `"
     Password = "` + connectorAPIPassword + `"
+    MaxConnections = ` + strconv.FormatInt(connectorAPIMaxConnections, 10) + `
+    AllowEmptyOrigin = false
+    MaxConnectionRatePerIP = ` + strconv.FormatInt(connectorAPIMaxConnectionRatePerIP, 10) + `
+    ConnectionRateBurstPerIP = ` + strconv.FormatInt(connectorAPIConnectionRateBurstPerIP, 10) + `
 
 [Redis]
     # The url used to connect to a pubsub server

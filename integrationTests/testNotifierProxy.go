@@ -74,7 +74,7 @@ func NewTestNotifierWithWS(cfg config.MainConfig) (*testNotifier, error) {
 		return nil, err
 	}
 
-	upgrader, err := ws.NewWSUpgraderWrapper(1024, 1024)
+	upgrader, err := ws.NewWSUpgraderWrapper(1024, 1024, cfg.ConnectorApi.AllowEmptyOrigin)
 	if err != nil {
 		return nil, err
 	}
