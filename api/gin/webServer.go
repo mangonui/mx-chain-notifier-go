@@ -3,6 +3,7 @@ package gin
 import (
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -106,7 +107,17 @@ func (w *webServer) Run() error {
 	}
 
 	engine := gin.Default()
-	engine.Use(cors.Default())
+	// ISSUE-015: previously this was `cors.Default()` which sets
+	// AllowAllOrigins=true. The notifier streams transactional event
+	// data — a permissive CORS posture lets browser-adjacent attackers
+	// read that stream cross-origin. Mirror the indexer/chain-go pattern
+	// with a localhost-only AllowOriginFunc. Operators that need
+	// cross-origin event consumption should put the notifier behind an
+	// auth-aware reverse proxy rather than relaxing this here.
+	corsCfg := cors.DefaultConfig()
+	corsCfg.AllowOriginFunc = isAllowedCORSOrigin
+	corsCfg.AddAllowHeaders("Authorization")
+	engine.Use(cors.New(corsCfg))
 
 	err = w.createGroups()
 	if err != nil {
@@ -117,10 +128,18 @@ func (w *webServer) Run() error {
 
 	addr := w.getWSAddr()
 
+	// ISSUE-017: previously only ReadHeaderTimeout was set, leaving the
+	// notifier vulnerable to slow-body, slow-write and idle-keepalive
+	// resource exhaustion. The notifier streams events so WriteTimeout
+	// must accommodate buffered fanout — 60s is comfortably above
+	// observed event-burst sizes.
 	server := &http.Server{
 		Addr:              addr,
 		Handler:           engine,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	w.httpServer, err = NewHTTPServerWrapper(server)
@@ -200,4 +219,15 @@ func (w *webServer) Close() error {
 // IsInterfaceNil returns true if there is no value under the interface
 func (w *webServer) IsInterfaceNil() bool {
 	return w == nil
+}
+
+// isAllowedCORSOrigin permits only same-host (loopback) Origins. See
+// issues/ISSUE-015 and the mirroring helper in mx-chain-es-indexer-go.
+func isAllowedCORSOrigin(origin string) bool {
+	parsedOrigin, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	hostname := strings.ToLower(parsedOrigin.Hostname())
+	return hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1"
 }

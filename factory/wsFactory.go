@@ -1,6 +1,9 @@
 package factory
 
 import (
+	"net"
+	"strings"
+
 	"github.com/multiversx/mx-chain-communication-go/websocket/data"
 	factoryHost "github.com/multiversx/mx-chain-communication-go/websocket/factory"
 	"github.com/multiversx/mx-chain-core-go/marshal"
@@ -32,6 +35,18 @@ func CreateWSHandler(apiType string, wsDispatcher dispatcher.Dispatcher, marshal
 }
 
 func createWSHandler(wsDispatcher dispatcher.Dispatcher, marshaller marshal.Marshalizer, connectorAPIConfig config.ConnectorApiConfig) (dispatcher.WSHandler, error) {
+	// ISSUE-028: AllowEmptyOrigin=true disables browser CSRF protection on
+	// the WS upgrade (non-browser clients have no Origin header). That is
+	// legitimate for server-to-server use over loopback, but with a public
+	// bind it removes the only browser-side defense. Log a loud warning
+	// so this combination is auditable from a single grep of startup logs.
+	if connectorAPIConfig.AllowEmptyOrigin && !isLoopbackHost(connectorAPIConfig.Host) {
+		log.Warn("notifier WS AllowEmptyOrigin=true with non-loopback Host — "+
+			"this disables browser CSRF protection on WebSocket upgrades; "+
+			"front the notifier with an auth-aware reverse proxy or restrict the bind",
+			"host", connectorAPIConfig.Host)
+	}
+
 	upgrader, err := ws.NewWSUpgraderWrapper(readBufferSize, writeBufferSize, connectorAPIConfig.AllowEmptyOrigin)
 	if err != nil {
 		return nil, err
@@ -85,6 +100,35 @@ func createWsObsConnector(
 	}
 
 	return host, nil
+}
+
+// isLoopbackHost reports whether the given Host field (as configured in
+// notifier.toml under [ConnectorApi]) binds to a loopback address. An
+// empty Host means "default" which the webServer layer treats as
+// localhost:5000 — therefore loopback. Bare ports like ":5000" bind to
+// all interfaces and are NOT loopback. See issues/ISSUE-028.
+func isLoopbackHost(host string) bool {
+	if host == "" {
+		return true
+	}
+	hostname, _, err := net.SplitHostPort(host)
+	if err != nil {
+		// Not a host:port form; treat the whole value as the hostname.
+		hostname = host
+	}
+	if hostname == "" {
+		// Bare ":port" form binds to all interfaces.
+		return false
+	}
+	hostname = strings.ToLower(hostname)
+	if hostname == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(hostname)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
 }
 
 func createWsHost(wsConfig config.WebSocketConfig, wsMarshaller marshal.Marshalizer) (factoryHost.FullDuplexHost, error) {

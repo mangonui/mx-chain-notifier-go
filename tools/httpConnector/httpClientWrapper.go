@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"time"
 
@@ -118,9 +118,16 @@ func (h *httpClientWrapper) Post(
 		}
 	}()
 
-	resBody, err := ioutil.ReadAll(resp.Body)
+	// ISSUE-027: cap outbound response body. Migrate from deprecated
+	// ioutil.ReadAll to io.ReadAll while we're here. ACK/error responses
+	// from the publisher endpoint are small; 256 KiB is generous.
+	const maxResponseBytes = 256 * 1024
+	resBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return err
+	}
+	if int64(len(resBody)) > maxResponseBytes {
+		return fmt.Errorf("response body exceeds %d bytes", maxResponseBytes)
 	}
 
 	if resp.StatusCode != http.StatusOK {
