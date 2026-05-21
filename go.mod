@@ -65,8 +65,8 @@ require (
 
 replace github.com/multiversx/mx-chain-core-go => github.com/mangonui/mx-chain-core-go v0.0.0-20260514035830-0e3a1d482b18
 
-replace github.com/multiversx/mx-chain-crypto-go => github.com/mangonui/mx-chain-crypto-go v0.0.0-20260514040232-ceb6e91f2138
+replace github.com/multiversx/mx-chain-crypto-go => github.com/mangonui/mx-chain-crypto-go v0.0.0-20260521050229-0071ade87e85
 
 replace github.com/multiversx/mx-chain-logger-go => github.com/mangonui/mx-chain-logger-go v0.0.0-20260514040119-0a9c9ca2e4eb
 
-replace github.com/multiversx/mx-chain-communication-go => github.com/mangonui/mx-chain-communication-go v0.0.0-20260514041114-09dd41ef476e
+replace github.com/multiversx/mx-chain-communication-go => github.com/mangonui/mx-chain-communication-go v0.0.0-20260521073214-7183c19e808a
